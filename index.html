@@ -4,6 +4,19 @@
     <script src="Assets/dist/aframe-environment-component.min.js"></script>
     <script src="Assets/src/components/oculus-go-controls.js"></script>
     <script>
+      AFRAME.registerComponent("rcam", {
+        init: function() {
+          let el = this.el;
+
+          el.addEventListener("enter-vr", function(event) {
+            let camera = document.querySelector("a-camera");
+            let position = camera.getAttribute("position");
+            position.y = 2;
+            camera.setAttribute("position", position);
+          });
+        }
+      });
+
       let checker = true;
       AFRAME.registerComponent("camera-movement", {
         init: function() {
@@ -223,7 +236,7 @@
   </head>
 
   <body>
-    <a-scene>
+    <a-scene rcam>
       <a-entity id="camera-wrapper" position="0 0 0">
         <a-camera id="camera" position="0 2 0"></a-camera>
 
