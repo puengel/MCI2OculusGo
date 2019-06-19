@@ -1,46 +1,262 @@
 <html>
+  <head>
+    <script src="Assets/dist/aframe-master.min.js"></script>
+    <script src="Assets/dist/aframe-environment-component.min.js"></script>
+    <script src="Assets/src/components/oculus-go-controls.js"></script>
+    <script>
+      // Global variable zoomfactor: Used by component "zoom" and "grabbable"
+      let zoomfactor = 1.0;
 
-<head>
-  <script src="Assets/dist/aframe-master.min.js"></script>
-  <script src="Assets/dist/aframe-environment-component.min.js"></script>
-  <script src="Assets/src/components/oculus-go-controls.js"></script>
-  <script>
-    AFRAME.registerComponent("rcam", {
-      init: function () {
-        let el = this.el;
+      // Global zoom compobent on scene: Here we are 100% sure that trackpadchanged is fired
+      AFRAME.registerComponent("zoom", {
+        init: function() {
+          let el = this.el;
 
-        el.addEventListener("enter-vr", function (event) {
-          console.log(event)
-          let camera = document.querySelector("a-camera");
-          let position = camera.getAttribute("position");
-          position.y = 2;
-          camera.setAttribute("position", position);
-        });
-      }
-    });
+          el.addEventListener("trackpadchanged", function(event) {
+            let pad = navigator.getGamepads().item(0);
+            let axes = pad.axes;
+            let pos = wrapper.getAttribute("position");
+            if (pos.y > 0) {
+              zoomfactor += 0.1;
+            }
+            if (pos.y > 0) {
+              data.distance -= 0.1;
+            }
+          });
+        }
+      });
 
-    //see moveToThumb component for documentation
-    AFRAME.registerComponent("camera-movement", {
-      init: function () {
-        let self = this;
-        let data = this.data;
-        let el = this.el;
-        this.data.moving = false;
-        let moving = this.data.moving;
+      // Component to reset camera when entering VR
+      AFRAME.registerComponent("rcam", {
+        init: function() {
+          let el = this.el;
 
-        el.addEventListener("trackpaddown", function (event) {
-          self.data.moving = true;
-        });
+          el.addEventListener("enter-vr", function(event) {
+            console.log(event);
+            let camera = document.querySelector("a-camera");
+            let position = camera.getAttribute("position");
+            position.y = 2;
+            camera.setAttribute("position", position);
+          });
+        }
+      });
 
-        el.addEventListener("trackpadup", function (event) {
-          self.data.moving = false;
-        });
-      },
+      //see moveToThumb component for documentation
+      AFRAME.registerComponent("camera-movement", {
+        init: function() {
+          let self = this;
+          let data = this.data;
+          let el = this.el;
+          this.data.moving = false;
+          let moving = this.data.moving;
 
-      tick: function () {
-        if (this.data.moving) {
-          let usedHand = navigator.getGamepads().item(0).hand;
+          el.addEventListener("trackpaddown", function(event) {
+            self.data.moving = true;
+          });
+
+          el.addEventListener("trackpadup", function(event) {
+            self.data.moving = false;
+          });
+        },
+
+        tick: function() {
+          if (this.data.moving) {
+            let usedHand = navigator.getGamepads().item(0).hand;
+            let hands = document.querySelectorAll("[raycaster]");
+            let hand = null;
+            if (usedHand == "left") {
+              hand = hands[0];
+            }
+            if (usedHand == "right") {
+              hand = hands[1];
+            }
+
+            let dir = hand.object3D.getWorldDirection();
+            let wrapper = document.querySelector("#camera-wrapper");
+            let pad = navigator.getGamepads().item(0);
+            let axes = pad.axes;
+            let pos = wrapper.getAttribute("position");
+
+            let vz = 0;
+            let vx = 0;
+
+            let deadzone = 0.3;
+
+            if (axes[1] > deadzone) {
+              vz = 1;
+            }
+
+            if (axes[1] < -deadzone) {
+              vz = -1;
+            }
+
+            if (axes[0] > deadzone) {
+              vx = 1;
+            }
+
+            if (axes[0] < -deadzone) {
+              vx = -1;
+            }
+
+            pos.x -= dir.z * 0.1 * -vx - dir.x * 0.1 * vz;
+            pos.z -= dir.x * 0.1 * vx + dir.z * 0.1 * -vz;
+
+            wrapper.setAttribute("position", pos);
+
+            // check position
+            // get corresponding tower
+            // check if upper level is smaller then from el
+            // colorize yellow
+            // else colorize red
+          }
+        }
+      });
+
+      //add 'grabbableobject' component, which defines if a component can be grabbed
+      AFRAME.registerComponent("grabbableobject", {
+        //called when component is applied to entitiy
+        init: function() {
+          var data = this.data;
+          var el = this.el;
+
+          this.mousedown = function() {
+            //set 'grabbed' attribute on element
+            el.setAttribute("grabbed", null); //null must be set, since set Attribute requires 2 Arguments!
+            console.log("mousedown");
+            console.log(el);
+          };
+
+          this.mouseup = function() {
+            zoomfactor = 1.0;
+            console.log("mouseup");
+            // is el in a position where it can be released and snap to an new tower
+
+            // check position
+            let pos = el.getAttribute("position");
+
+            // Check if element can be released on this tower
+            // paramtetrs:
+            // - checkEl: Element to be checked
+            // - pos: position vecotor of checkEl
+            // - t_num: tower number of elements previous tower
+            // - t_x: x component of tower position
+            // - t_z: z component of tower position
+            // - delta: distance to span the element placing range over the turret
+            function checkTower(checkEl, pos, t_num, t_x, t_z, t, delta) {
+              let isOverTower =
+                pos.x < t_x + delta &&
+                pos.x > t_x - delta &&
+                pos.z > t_z - delta &&
+                pos.z < t_z + delta;
+
+              let notSelf = checkEl.getAttribute("tower") !== t_num;
+
+              let checkLevel =
+                t.length === 0 ||
+                t[t.length - 1].getAttribute("level") <
+                  checkEl.getAttribute("level");
+
+              return isOverTower && notSelf && checkLevel;
+
+              // return (// over t1
+              // pos.x < t_x + delta && pos.x > t_x - delta
+              // && pos.z > t_z - delta && pos.z < t_z + delta
+              // //not self
+              // && el.getAttribute('tower') !== t_num
+              // // check if upper level is smaller then from el
+              // && (t.length === 0 || t[t.length - 1].getAttribute('level') < el.getAttribute('level')))
+            }
+
+            // move - moves element to new tower
+            // parameters:
+            // - moveEl: Element to be moved
+            // - target_t: Tower array (object) where the element should be moved towards
+            // - t_num: Key of target tower in map of towers
+            // - t_x: x component of target tower position
+            // - t_z: z component of target tower position
+            function move(moveEl, target_t, t_num, t_x, t_z) {
+              //remove 'grabbed' attribute this element
+              let old_t = moveEl.getAttribute("tower");
+              moveEl.removeAttribute("grabbed");
+              // remove el from old tower
+              // add el to new tower
+              target_t.push(towers[old_t].pop());
+              // change position to snap on new tower
+              let i = target_t.length - 1;
+              let y = i * y_scale + y_scale;
+              moveEl.setAttribute("position", `${t_x} ${y} ${t_z}`);
+              moveEl.setAttribute("set-back-position", `${t_x} ${y} ${t_z}`);
+              // remove grabbable from el under this
+              if (target_t.length > 1) {
+                target_t[target_t.length - 2].removeAttribute(
+                  "grabbableobject"
+                );
+                console.log("removed grabbable under new el");
+                console.log(target_t[target_t.length - 2]);
+                console.log(t3);
+              }
+              // add grabbable to highest in old tower
+              // only when there is an element left
+              console.log(towers[old_t]);
+              if (towers[old_t].length > 0) {
+                towers[old_t][towers[old_t].length - 1].setAttribute(
+                  "grabbableobject",
+                  null
+                );
+                console.log(
+                  "added grabbable to now highest block on old tower $" + old_t
+                );
+                console.log(towers[old_t][towers[old_t].length - 1]);
+                //console.log(document.querySelectorAll('a-box'))
+              }
+
+              // set new tower attribute
+              moveEl.setAttribute("tower", t_num);
+            }
+
+            // get corresponding tower
+            let delta = 1;
+            if (checkTower(el, pos, 1, t1_x, t1_z, t1, delta)) {
+              move(el, t1, 1, t1_x, t1_z);
+            } else if (checkTower(el, pos, 2, t2_x, t2_z, t2, delta)) {
+              move(el, t2, 2, t2_x, t2_z);
+            } else if (checkTower(el, pos, 3, t3_x, t3_z, t3, delta)) {
+              move(el, t3, 3, t3_x, t3_z);
+            } else {
+              // else set back to set-back-position
+              el.removeAttribute("grabbed");
+              el.setAttribute("position", el.getAttribute("set-back-position"));
+            }
+          };
+
+          //add mousedown event (click on OculusGO trigger)
+          el.addEventListener("mousedown", this.mousedown);
+
+          //add mouseup event (release clicked OculusGO trigger)
+          el.addEventListener("mouseup", this.mouseup);
+        },
+
+        remove: function() {
+          var el = this.el;
+          el.removeEventListener("mousedown", this.mousedown);
+          el.removeEventListener("mouseup", this.mouseup);
+        }
+      });
+
+      //add 'grabbed' component which is applied to a grabbable element on click
+      AFRAME.registerComponent("grabbed", {
+        schema: {
+          distance: { default: 1 } //used to preserve the distance between controller and moveable object
+        },
+
+        //called when component is applied to entitiy
+        init: function() {
+          let el = this.el;
+          let data = this.data;
+
+          //get oculusGO controller
           let hands = document.querySelectorAll("[raycaster]");
+          let usedHand = navigator.getGamepads().item(0).hand;
           let hand = null;
           if (usedHand == "left") {
             hand = hands[0];
@@ -49,336 +265,176 @@
             hand = hands[1];
           }
 
-          let dir = hand.object3D.getWorldDirection();
-          let wrapper = document.querySelector("#camera-wrapper");
-          let pad = navigator.getGamepads().item(0);
-          let axes = pad.axes;
-          let pos = wrapper.getAttribute("position");
+          //calculate distance between controller and grabbed object
+          var wpVector = new THREE.Vector3();
+          let posRef = hand.object3D.getWorldPosition(wpVector);
+          let posObj = el.getAttribute("position");
+          let distance = Math.sqrt(
+            Math.pow(posRef.x - posObj.x, 2) +
+              Math.pow(posRef.y - posObj.y, 2) +
+              Math.pow(posRef.z - posObj.z, 2)
+          );
 
-          let vz = 0;
-          let vx = 0;
+          //overwrite distance in schema
+          data.distance = distance;
 
-          let deadzone = 0.3;
-
-          if (axes[1] > deadzone) {
-            vz = 1;
-          }
-
-          if (axes[1] < -deadzone) {
-            vz = -1;
-          }
-
-          if (axes[0] > deadzone) {
-            vx = 1;
-          }
-
-          if (axes[0] < -deadzone) {
-            vx = -1;
-          }
-
-          pos.x -= dir.z * 0.1 * -vx - dir.x * 0.1 * vz;
-          pos.z -= dir.x * 0.1 * vx + dir.z * 0.1 * -vz;
-
-          wrapper.setAttribute("position", pos);
-
-          // check position
-          // get corresponding tower
-          // check if upper level is smaller then from el
-          // colorize yellow
-          // else colorize red
-        }
-      }
-    });
-
-    //add 'grabbableobject' component, which defines if a component can be grabbed
-    AFRAME.registerComponent("grabbableobject", {
-      //called when component is applied to entitiy
-      init: function () {
-        var data = this.data;
-        var el = this.el;
-
-        //add mousedown event (click on OculusGO trigger)
-        el.addEventListener("mousedown", function () {
-          //set 'grabbed' attribute on element
-          el.setAttribute("grabbed", null); //null must be set, since set Attribute requires 2 Arguments!
-          console.log("mousedown")
-          console.log(el)
-        });
-
-        //add mouseup event (release clicked OculusGO trigger)
-        el.addEventListener("mouseup", function () {
-          // is el in a position where it can be released and snap to an new tower
-
-          // check position
-          let pos = el.getAttribute("position");
-
-          function checkTower(checkEl, pos, t_num, t_x, t_z, t, delta) {
-            let isOverTower =
-              pos.x < t_x + delta &&
-              pos.x > t_x - delta &&
-              pos.z > t_z - delta &&
-              pos.z < t_z + delta;
-
-            
-            let notSelf = checkEl.getAttribute("tower") !== t_num;
-
-         
-            let checkLevel =
-              t.length === 0 ||
-              t[t.length - 1].getAttribute("level") <
-              checkEl.getAttribute("level");
-
-         
-
-            return isOverTower && notSelf && checkLevel;
-
-            // return (// over t1
-            // pos.x < t_x + delta && pos.x > t_x - delta
-            // && pos.z > t_z - delta && pos.z < t_z + delta
-            // //not self
-            // && el.getAttribute('tower') !== t_num
-            // // check if upper level is smaller then from el
-            // && (t.length === 0 || t[t.length - 1].getAttribute('level') < el.getAttribute('level')))
-          }
-
-          function move(moveEl, target_t, t_num, t_x, t_z) {
-            //remove 'grabbed' attribute this element
-            moveEl.removeAttribute("grabbed");
-            // remove el from old tower
-            // add el to new tower
-            target_t.push(towers[moveEl.getAttribute("tower")].pop());
-            // change position to snap on new tower
-            let i = target_t.length - 1;
-            let y = i * y_scale + y_scale;
-            moveEl.setAttribute("position", `${t_x} ${y} ${t_z}`);
-            moveEl.setAttribute("set-back-position", `${t_x} ${y} ${t_z}`);
-            // remove grabbable from el under this
-            if (target_t.length > 1) {
-              target_t[target_t.length - 2].removeAttribute(
-                "grabbableobject"
-              );
-              console.log("removed grabbable under new el")
-              console.log(target_t[target_t.length - 2])
-              console.log(t3)
+          // TODO: Find out why this event is never fired
+          el.addEventListener("trackpadchanged", function() {
+            el.setAttribute("color", "green");
+            let dir = hand.object3D.getWorldDirection();
+            let pad = navigator.getGamepads().item(0);
+            let axes = pad.axes;
+            let pos = wrapper.getAttribute("position");
+            if (pos.y > 0) {
+              data.distance += 1;
             }
-            // add grabbable to highest in old tower
-            // only when there is an element left
-            let old_t = moveEl.getAttribute("tower");
-            if (towers[old_t].length > 0) {
-
-              towers[old_t][towers[old_t].length - 1].setAttribute(
-                "grabbableobject",
-                null
-              );
-              console.log("added grabbable to now highest block on old tower")
-              console.log(towers[old_t][towers[old_t].length - 1])
-              //console.log(document.querySelectorAll('a-box'))
-
+            if (pos.y > 0) {
+              data.distance -= 1;
             }
+          });
+        },
 
+        //called once every frame
+        tick: function() {
+          let el = this.el;
+          let data = this.data;
 
-
-            // set new tower attribute
-            moveEl.setAttribute("tower", t_num);
+          //get oculusGO controller
+          let hands = document.querySelectorAll("[raycaster]");
+          let usedHand = navigator.getGamepads().item(0).hand;
+          if (usedHand == "left") {
+            hand = hands[0];
+          }
+          if (usedHand == "right") {
+            hand = hands[1];
           }
 
-          // get corresponding tower
-          let delta = 1;
-          if (checkTower(el, pos, 1, t1_x, t1_z, t1, delta)) {
-            move(el, t1, 1, t1_x, t1_z);
-          } else if (checkTower(el, pos, 2, t2_x, t2_z, t2, delta)) {
-            move(el, t2, 2, t2_x, t2_z);
-          } else if (checkTower(el, pos, 3, t3_x, t3_z, t3, delta)) {
-            move(el, t3, 3, t3_x, t3_z);
-          } else {
-            // else set back to set-back-position
-            el.removeAttribute("grabbed");
-            el.setAttribute("position", el.getAttribute("set-back-position"));
-          }
-        });
-      }
-    });
+          //get rotation and world position of controller
+          let rot = hand.object3D.getWorldDirection();
+          let posRef = hand.object3D.getWorldPosition();
 
-    //add 'grabbed' component which is applied to a grabbable element on click
-    AFRAME.registerComponent("grabbed", {
-      schema: {
-        distance: { default: 1 } //used to preserve the distance between controller and moveable object
-      },
+          let scale = el.getAttribute("scale");
 
-      //called when component is applied to entitiy
-      init: function () {
-        let el = this.el;
-        let data = this.data;
-
-        //get oculusGO controller
-        let hands = document.querySelectorAll("[raycaster]");
-        let usedHand = navigator.getGamepads().item(0).hand;
-        let hand = null;
-        if (usedHand == "left") {
-          hand = hands[0];
+          //update new object position
+          el.setAttribute("position", {
+            x: posRef.x - rot.x * data.distance * zoomfactor,
+            y:
+              posRef.y - rot.y * data.distance * zoomfactor >= scale.y / 2
+                ? posRef.y - rot.y * data.distance * zoomfactor
+                : scale.y / 2,
+            z: posRef.z - rot.z * data.distance * zoomfactor
+          });
         }
-        if (usedHand == "right") {
-          hand = hands[1];
-        }
+      });
+    </script>
+  </head>
 
-        //calculate distance between controller and grabbed object
-        var wpVector = new THREE.Vector3();
-        let posRef = hand.object3D.getWorldPosition(wpVector);
-        let posObj = el.getAttribute("position");
-        let distance = Math.sqrt(
-          Math.pow(posRef.x - posObj.x, 2) +
-          Math.pow(posRef.y - posObj.y, 2) +
-          Math.pow(posRef.z - posObj.z, 2)
-        );
+  <body>
+    <a-scene rcam zoom>
+      <!-- generate 'player' camera -->
+      <a-entity id="camera-wrapper" position="0 0 0">
+        <a-camera id="camera" position="0 2 0"></a-camera>
 
-        //overwrite distance in schema
-        data.distance = distance;
+        <a-entity
+          camera-movement
+          id="leftHand"
+          laser-controls="hand: left"
+          raycaster="objects: .collidable"
+          line="color: #118A7E"
+        ></a-entity>
+        <a-entity
+          camera-movement
+          id="rightHand"
+          laser-controls="hand: right"
+          raycaster="objects: .collidable"
+          line="color: #118A7E"
+        ></a-entity>
+      </a-entity>
 
-        el.addEventListener("trackpadchanged", function () {
-          el.setAttribute("color", "green");
-          let dir = hand.object3D.getWorldDirection();
-          let pad = navigator.getGamepads().item(0);
-          let axes = pad.axes;
-          let pos = wrapper.getAttribute("position");
-          if (pos.y > 0) {
-            data.distance += 1;
-          }
-          if (pos.y > 0) {
-            data.distance -= 1;
-          }
-        });
-      },
+      <!-- generate forest environment -->
+      <a-entity
+        environment="preset: forest; playArea: 1000000; dressingAmount: 500; dressingScale: 5; "
+      ></a-entity>
 
-      //called once every frame
-      tick: function () {
-        let el = this.el;
-        let data = this.data;
+      <!-- generate grabbable box -->
+    </a-scene>
+    <script>
+      let t1 = [];
+      let t2 = [];
+      let t3 = [];
+      let towers = {
+        1: t1,
+        2: t2,
+        3: t3
+      };
 
-        //get oculusGO controller
-        let hands = document.querySelectorAll("[raycaster]");
-        let usedHand = navigator.getGamepads().item(0).hand;
-        if (usedHand == "left") {
-          hand = hands[0];
-        }
-        if (usedHand == "right") {
-          hand = hands[1];
-        }
+      //create the dynamic elements
+      var urlParams = new URLSearchParams(location.search);
+      let size = urlParams.get("size");
+      console.log(size);
 
-        //get rotation and world position of controller
-        let rot = hand.object3D.getWorldDirection();
-        let posRef = hand.object3D.getWorldPosition();
+      let y_scale = 1.2;
+      let xz_scale = 0.5;
+      let t1_x = -10;
+      let t1_z = -10;
 
-        let scale = el.getAttribute("scale");
+      let t2_x = 0;
+      let t2_z = -Math.sqrt(200);
 
-        //update new object position
-        el.setAttribute("position", {
-          x: posRef.x - rot.x * data.distance,
-          y:
-            posRef.y - rot.y * data.distance >= scale.y / 2
-              ? posRef.y - rot.y * data.distance
-              : scale.y / 2,
-          z: posRef.z - rot.z * data.distance
-        });
-      }
-    });
-  </script>
-</head>
+      let t3_x = 10;
+      let t3_z = -10;
 
-<body>
-  <a-scene rcam>
-    <!-- generate 'player' camera -->
-    <a-entity id="camera-wrapper" position="0 0 0">
-      <a-camera id="camera" position="0 2 0"></a-camera>
-
-      <a-entity camera-movement id="leftHand" laser-controls="hand: left" raycaster="objects: .collidable"
-        line="color: #118A7E"></a-entity>
-      <a-entity camera-movement id="rightHand" laser-controls="hand: right" raycaster="objects: .collidable"
-        line="color: #118A7E"></a-entity>
-    </a-entity>
-
-    <!-- generate forest environment -->
-    <a-entity environment="preset: forest; playArea: 1000000; dressingAmount: 500; dressingScale: 5; "></a-entity>
-
-    <!-- generate grabbable box -->
-  </a-scene>
-  <script>
-    let t1 = [];
-    let t2 = [];
-    let t3 = [];
-    let towers = {
-      1: t1,
-      2: t2,
-      3: t3
-    };
-
-    //create the dynamic elements
-    var urlParams = new URLSearchParams(location.search);
-    let size = urlParams.get("size");
-    console.log(size);
-
-    let y_scale = 1.2;
-    let xz_scale = 0.5;
-    let t1_x = -10;
-    let t1_z = -10;
-
-    let t2_x = 0;
-    let t2_z = -Math.sqrt(200);
-
-    let t3_x = 10;
-    let t3_z = -10;
-
-    let scene = document.querySelector("a-scene");
-    let newBlock = document.createElement("a-box");
-    newBlock.setAttribute("class", "collidable");
-    newBlock.setAttribute("color", "black");
-    newBlock.setAttribute("position", `${t1_x} 0 ${t1_z}`);
-    let xz = size * 2 * xz_scale + xz_scale * 2;
-    newBlock.setAttribute("scale", `${xz} ${y_scale} ${xz}`);
-    scene.appendChild(newBlock);
-
-    newBlock = document.createElement("a-box");
-    newBlock.setAttribute("class", "collidable");
-    newBlock.setAttribute("color", "black");
-    newBlock.setAttribute("position", `${t2_x} 0 ${t2_z}`);
-    xz = size * 2 * xz_scale + xz_scale * 2;
-    newBlock.setAttribute("scale", `${xz} ${y_scale} ${xz}`);
-    scene.appendChild(newBlock);
-
-    newBlock = document.createElement("a-box");
-    newBlock.setAttribute("class", "collidable");
-    newBlock.setAttribute("color", "black");
-    newBlock.setAttribute("position", `${t3_x} 0 ${t3_z}`);
-    xz = size * 2 * xz_scale + xz_scale * 2;
-    newBlock.setAttribute("scale", `${xz} ${y_scale} ${xz}`);
-    scene.appendChild(newBlock);
-
-    for (let i = 0; i < size; i++) {
-      //create new sphere with the attribute 'grabbableobject'
-      newBlock = document.createElement("a-box");
-      if (i == size - 1) {
-        newBlock.setAttribute("grabbableobject", null);
-      }
+      let scene = document.querySelector("a-scene");
+      let newBlock = document.createElement("a-box");
       newBlock.setAttribute("class", "collidable");
-      newBlock.setAttribute("color", "grey");
-      let y = i * y_scale + y_scale;
-      newBlock.setAttribute("position", `${t1_x} ${y} ${t1_z} `);
-      newBlock.setAttribute("set-back-position", `${t1_x} ${y} ${t1_z} `);
-
-      y += y_scale;
-      let xz = (size * 2 - i) * xz_scale;
-      console.log(xz);
+      newBlock.setAttribute("color", "black");
+      newBlock.setAttribute("position", `${t1_x} 0 ${t1_z}`);
+      let xz = size * 2 * xz_scale + xz_scale * 2;
       newBlock.setAttribute("scale", `${xz} ${y_scale} ${xz}`);
-      newBlock.setAttribute("level", i);
-      newBlock.setAttribute("tower", 1);
-
-      console.log(newBlock);
-
-      //append new block to the scene
       scene.appendChild(newBlock);
-      console.log(scene);
-      t1.push(newBlock);
-    }
-  </script>
-</body>
 
+      newBlock = document.createElement("a-box");
+      newBlock.setAttribute("class", "collidable");
+      newBlock.setAttribute("color", "black");
+      newBlock.setAttribute("position", `${t2_x} 0 ${t2_z}`);
+      xz = size * 2 * xz_scale + xz_scale * 2;
+      newBlock.setAttribute("scale", `${xz} ${y_scale} ${xz}`);
+      scene.appendChild(newBlock);
+
+      newBlock = document.createElement("a-box");
+      newBlock.setAttribute("class", "collidable");
+      newBlock.setAttribute("color", "black");
+      newBlock.setAttribute("position", `${t3_x} 0 ${t3_z}`);
+      xz = size * 2 * xz_scale + xz_scale * 2;
+      newBlock.setAttribute("scale", `${xz} ${y_scale} ${xz}`);
+      scene.appendChild(newBlock);
+
+      for (let i = 0; i < size; i++) {
+        //create new sphere with the attribute 'grabbableobject'
+        newBlock = document.createElement("a-box");
+        if (i == size - 1) {
+          newBlock.setAttribute("grabbableobject", null);
+        }
+        newBlock.setAttribute("class", "collidable");
+        newBlock.setAttribute("color", "grey");
+        let y = i * y_scale + y_scale;
+        newBlock.setAttribute("position", `${t1_x} ${y} ${t1_z} `);
+        newBlock.setAttribute("set-back-position", `${t1_x} ${y} ${t1_z} `);
+
+        y += y_scale;
+        let xz = (size * 2 - i) * xz_scale;
+        console.log(xz);
+        newBlock.setAttribute("scale", `${xz} ${y_scale} ${xz}`);
+        newBlock.setAttribute("level", i);
+        newBlock.setAttribute("tower", 1);
+
+        console.log(newBlock);
+
+        //append new block to the scene
+        scene.appendChild(newBlock);
+        console.log(scene);
+        t1.push(newBlock);
+      }
+    </script>
+  </body>
 </html>
