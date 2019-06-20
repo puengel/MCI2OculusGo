@@ -44,7 +44,8 @@
         pos.z > t_z - delta &&
         pos.z < t_z + delta;
 
-      let notSelf = checkEl.getAttribute("tower") !== t_num;
+      let self = checkEl.getAttribute("tower") == t_num;
+      if (self) return false
 
       let checkLevel =
         t.length === 0 ||
